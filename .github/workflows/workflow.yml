@@ -1,4 +1,4 @@
-name: Patch MyVergies DMG (Replace Tor)
+name: Patch MyVergies DMG (Replace Tor Binary)
 
 on:
   workflow_dispatch:
@@ -28,45 +28,38 @@ jobs:
           hdiutil attach myvergies-writable.dmg \
             -mountpoint /Volumes/MyVergiesRW
 
-      - name: List DMG structure (important)
+      - name: Verify Tor target path exists
         run: |
-          echo "==== DMG ROOT ===="
-          ls -lah /Volumes/MyVergiesRW
-          echo
-          echo "==== APP BUNDLE TREE ===="
-          find /Volumes/MyVergiesRW -maxdepth 5 -print
+          TOR_DIR="/Volumes/MyVergiesRW/MyVergies.app/Contents/Resources/app.asar.unpacked/bin/Tor"
+          TOR_PATH="$TOR_DIR/tor.real"
 
-      - name: Locate Tor binary automatically
-        id: find_tor
-        run: |
-          echo "Searching for Tor executable..."
+          echo "Checking Tor directory:"
+          ls -lah "$TOR_DIR"
 
-          TOR_PATH=$(find /Volumes/MyVergiesRW \
-            -type f \
-            -perm +111 \
-            \( -name "tor" -o -name "tor.real" \) \
-            | head -n 1)
-
-          if [ -z "$TOR_PATH" ]; then
-            echo "❌ No Tor executable found"
+          if [ ! -f "$TOR_PATH" ]; then
+            echo "❌ Existing tor.real not found at expected path:"
+            echo "   $TOR_PATH"
             exit 1
           fi
 
-          echo "✅ Found Tor at:"
-          echo "  $TOR_PATH"
-          echo "TOR_PATH=$TOR_PATH" >> $GITHUB_ENV
+          echo "✅ Found existing Tor binary"
 
       - name: Replace Tor binary
         run: |
-          echo "Replacing Tor at:"
-          echo "  $TOR_PATH"
+          TOR_PATH="/Volumes/MyVergiesRW/MyVergies.app/Contents/Resources/app.asar.unpacked/bin/Tor/tor.real"
 
-          chmod +w "$TOR_PATH"
+          echo "Removing old Tor binary..."
+          rm -f "$TOR_PATH"
+
+          echo "Copying new Tor binary..."
           cp bin/Tor/tor.real "$TOR_PATH"
-          chmod +x "$TOR_PATH"
+
+          chmod 755 "$TOR_PATH"
 
       - name: Verify replacement
         run: |
+          TOR_PATH="/Volumes/MyVergiesRW/MyVergies.app/Contents/Resources/app.asar.unpacked/bin/Tor/tor.real"
+
           ls -lah "$TOR_PATH"
           file "$TOR_PATH"
           shasum -a 256 "$TOR_PATH"
