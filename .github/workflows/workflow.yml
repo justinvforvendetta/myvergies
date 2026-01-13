@@ -70,10 +70,31 @@ jobs:
       - name: Ad-hoc codesign app
         run: |
           APP="/Volumes/MyVergiesRW/MyVergies.app"
-          echo "Signing app bundle (ad-hoc)..."
-          codesign --force --deep --sign - "$APP"
-          echo "Verifying signature..."
-          codesign --verify --deep --strict --verbose=2 "$APP"
+
+          echo "🔧 Removing existing signatures..."
+          codesign --remove-signature "$APP" || true
+
+          echo "🔧 Signing Electron Framework..."
+          codesign --force --sign - \
+            "$APP/Contents/Frameworks/Electron Framework.framework"
+
+          echo "🔧 Signing helper apps..."
+          for helper in "$APP"/Contents/Frameworks/*Helper*.app; do
+            echo "Signing $helper"
+            codesign --force --sign - "$helper"
+          done
+
+          echo "🔧 Signing remaining frameworks..."
+          for fw in "$APP"/Contents/Frameworks/*.framework; do
+            echo "Signing $fw"
+            codesign --force --sign - "$fw"
+          done
+
+          echo "🔧 Signing main app bundle..."
+          codesign --force --sign - "$APP"
+
+          echo "🔍 Verifying signature..."
+          codesign --verify --verbose=2 "$APP"
 
       - name: Unmount DMG
         run: |
