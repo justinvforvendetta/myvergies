@@ -1,4 +1,4 @@
-name: Replace Tor in MyVergies DMG
+name: Patch MyVergies DMG (Replace Tor)
 
 on:
   workflow_dispatch:
@@ -8,91 +8,81 @@ jobs:
     runs-on: macos-latest
 
     steps:
-      - name: Checkout repo
+      - name: Checkout repository
         uses: actions/checkout@v4
 
       - name: Verify inputs
         run: |
           ls -lah
-          test -f myvergies.dmg || (echo "❌ myvergies.dmg not found" && exit 1)
-          test -f tor.real || (echo "❌ tor.real not found" && exit 1)
+          ls -lah bin/Tor
+          file bin/Tor/tor.real
 
-      # -------------------------------
-      # STEP 1: Mount DMG (read-only)
-      # -------------------------------
-      - name: Mount DMG (read-only)
-        run: |
-          hdiutil attach myvergies.dmg -mountpoint /Volumes/MyVergiesRO -readonly
-
-      # ---------------------------------------
-      # STEP 2: List ALL files inside the DMG
-      # ---------------------------------------
-      - name: List files inside DMG
-        run: |
-          echo "===== FILE TREE INSIDE DMG ====="
-          find /Volumes/MyVergiesRO -print
-          echo "================================"
-
-      - name: Unmount read-only DMG
-        run: |
-          hdiutil detach /Volumes/MyVergiesRO
-
-      # ---------------------------------------
-      # STEP 3: Convert DMG to writable format
-      # ---------------------------------------
       - name: Convert DMG to writable
         run: |
           hdiutil convert myvergies.dmg \
             -format UDRW \
             -o myvergies-writable.dmg
 
-      # ---------------------------------------
-      # STEP 4: Mount writable DMG
-      # ---------------------------------------
-      - name: Mount writable DMG
+      - name: Mount DMG
         run: |
-          hdiutil attach myvergies-writable.dmg -mountpoint /Volumes/MyVergiesRW
+          hdiutil attach myvergies-writable.dmg \
+            -mountpoint /Volumes/MyVergiesRW
 
-      # ---------------------------------------
-      # STEP 5: Replace Tor binary
-      # ---------------------------------------
-      - name: Replace Tor binary
+      - name: List DMG structure (important)
         run: |
-          TOR_PATH="/Volumes/MyVergiesRW/bin/Tor/tor"
+          echo "==== DMG ROOT ===="
+          ls -lah /Volumes/MyVergiesRW
+          echo
+          echo "==== APP BUNDLE TREE ===="
+          find /Volumes/MyVergiesRW -maxdepth 5 -print
 
-          if [ ! -f "$TOR_PATH" ]; then
-            echo "❌ Expected Tor binary not found at:"
-            echo "   $TOR_PATH"
-            echo "Check file listing above and update path."
+      - name: Locate Tor binary automatically
+        id: find_tor
+        run: |
+          echo "Searching for Tor executable..."
+
+          TOR_PATH=$(find /Volumes/MyVergiesRW \
+            -type f \
+            -perm +111 \
+            \( -name "tor" -o -name "tor.real" \) \
+            | head -n 1)
+
+          if [ -z "$TOR_PATH" ]; then
+            echo "❌ No Tor executable found"
             exit 1
           fi
 
-          echo "✅ Found Tor binary, replacing..."
-          cp tor.real "$TOR_PATH"
+          echo "✅ Found Tor at:"
+          echo "  $TOR_PATH"
+          echo "TOR_PATH=$TOR_PATH" >> $GITHUB_ENV
+
+      - name: Replace Tor binary
+        run: |
+          echo "Replacing Tor at:"
+          echo "  $TOR_PATH"
+
+          chmod +w "$TOR_PATH"
+          cp bin/Tor/tor.real "$TOR_PATH"
           chmod +x "$TOR_PATH"
 
-      # ---------------------------------------
-      # STEP 6: Unmount writable DMG
-      # ---------------------------------------
-      - name: Unmount writable DMG
+      - name: Verify replacement
+        run: |
+          ls -lah "$TOR_PATH"
+          file "$TOR_PATH"
+          shasum -a 256 "$TOR_PATH"
+
+      - name: Unmount DMG
         run: |
           hdiutil detach /Volumes/MyVergiesRW
 
-      # ---------------------------------------
-      # STEP 7: Rebuild compressed DMG
-      # ---------------------------------------
-      - name: Rebuild final DMG
+      - name: Recompress DMG
         run: |
           hdiutil convert myvergies-writable.dmg \
             -format UDZO \
-            -imagekey zlib-level=9 \
-            -o myvergies-fixed.dmg
+            -o myvergies-patched.dmg
 
-      # ---------------------------------------
-      # STEP 8: Upload artifact
-      # ---------------------------------------
       - name: Upload patched DMG
         uses: actions/upload-artifact@v4
         with:
-          name: myvergies-fixed-dmg
-          path: myvergies-fixed.dmg
+          name: myvergies-patched-dmg
+          path: myvergies-patched.dmg
