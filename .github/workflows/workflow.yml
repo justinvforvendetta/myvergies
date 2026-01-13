@@ -66,6 +66,14 @@ jobs:
           ls -lah "$TOR_PATH"
           file "$TOR_PATH"
           shasum -a 256 "$TOR_PATH"
+          
+      - name: Ad-hoc codesign app
+        run: |
+          APP="/Volumes/MyVergiesRW/MyVergies.app"
+          echo "Signing app bundle (ad-hoc)..."
+          codesign --force --deep --sign - "$APP"
+          echo "Verifying signature..."
+          codesign --verify --deep --strict --verbose=2 "$APP"
 
       - name: Unmount DMG
         run: |
