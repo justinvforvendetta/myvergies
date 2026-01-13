@@ -67,27 +67,31 @@ jobs:
           file "$TOR_PATH"
           shasum -a 256 "$TOR_PATH"
           
-      - name: Ad-hoc codesign app
+      - name: Ad-hoc codesign (Mach-O first)
         run: |
           APP="/Volumes/MyVergiesRW/MyVergies.app"
 
           echo "🔧 Removing existing signatures..."
           codesign --remove-signature "$APP" || true
 
-          echo "🔧 Signing Electron Framework..."
-          codesign --force --sign - \
-            "$APP/Contents/Frameworks/Electron Framework.framework"
+          echo "🔧 Signing Mach-O binaries inside frameworks..."
+          find "$APP/Contents/Frameworks" -type f -perm +111 | while read -r bin; do
+            if file "$bin" | grep -q "Mach-O"; then
+              echo "Signing Mach-O: $bin"
+              codesign --force --sign - "$bin"
+            fi
+          done
+
+          echo "🔧 Signing framework bundles..."
+          find "$APP/Contents/Frameworks" -name "*.framework" | while read -r fw; do
+            echo "Signing framework: $fw"
+            codesign --force --sign - "$fw"
+          done
 
           echo "🔧 Signing helper apps..."
           for helper in "$APP"/Contents/Frameworks/*Helper*.app; do
-            echo "Signing $helper"
+            echo "Signing helper: $helper"
             codesign --force --sign - "$helper"
-          done
-
-          echo "🔧 Signing remaining frameworks..."
-          for fw in "$APP"/Contents/Frameworks/*.framework; do
-            echo "Signing $fw"
-            codesign --force --sign - "$fw"
           done
 
           echo "🔧 Signing main app bundle..."
@@ -95,6 +99,7 @@ jobs:
 
           echo "🔍 Verifying signature..."
           codesign --verify --verbose=2 "$APP"
+
 
       - name: Unmount DMG
         run: |
