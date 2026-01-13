@@ -61,7 +61,9 @@ jobs:
           echo "Copying new Tor binary from repo root..."
           cp tor.real "$TOR_PATH"
 
+          echo "Setting executable permissions and clearing quarantine..."
           chmod 755 "$TOR_PATH"
+          xattr -d com.apple.quarantine "$TOR_PATH" || true
 
       - name: Verify Tor replacement
         run: |
