@@ -1,4 +1,4 @@
-name: Patch MyVergies DMG (Replace Tor Binary)
+name: Patch MyVergies DMG (Replace Tor Binary + Codesign)
 
 on:
   workflow_dispatch:
@@ -31,25 +31,29 @@ jobs:
           hdiutil attach myvergies-writable.dmg \
             -mountpoint /Volumes/MyVergiesRW
 
-      - name: Verify Tor target path exists inside DMG
+      - name: Copy app out of DMG
         run: |
-          TOR_DIR="/Volumes/MyVergiesRW/MyVergies.app/Contents/Resources/app.asar.unpacked/bin/Tor"
+          echo "Copying MyVergies.app out of DMG to workspace..."
+          cp -R "/Volumes/MyVergiesRW/MyVergies.app" MyVergies.app
+
+      - name: Verify Tor path inside copied app
+        run: |
+          TOR_DIR="MyVergies.app/Contents/Resources/app.asar.unpacked/bin/Tor"
           TOR_PATH="$TOR_DIR/tor.real"
 
-          echo "Listing Tor directory inside DMG:"
+          echo "Listing Tor directory inside copied app:"
           ls -lah "$TOR_DIR"
 
           if [ ! -f "$TOR_PATH" ]; then
-            echo "❌ Existing tor.real not found at expected path:"
-            echo "   $TOR_PATH"
+            echo "❌ Tor binary not found at expected path: $TOR_PATH"
             exit 1
           fi
 
-          echo "✅ Found existing Tor binary inside DMG"
+          echo "✅ Tor binary found"
 
       - name: Replace Tor binary
         run: |
-          TOR_PATH="/Volumes/MyVergiesRW/MyVergies.app/Contents/Resources/app.asar.unpacked/bin/Tor/tor.real"
+          TOR_PATH="MyVergies.app/Contents/Resources/app.asar.unpacked/bin/Tor/tor.real"
 
           echo "Removing old Tor binary..."
           rm -f "$TOR_PATH"
@@ -59,23 +63,23 @@ jobs:
 
           chmod 755 "$TOR_PATH"
 
-      - name: Verify replacement
+      - name: Verify Tor replacement
         run: |
-          TOR_PATH="/Volumes/MyVergiesRW/MyVergies.app/Contents/Resources/app.asar.unpacked/bin/Tor/tor.real"
+          TOR_PATH="MyVergies.app/Contents/Resources/app.asar.unpacked/bin/Tor/tor.real"
 
           ls -lah "$TOR_PATH"
           file "$TOR_PATH"
           shasum -a 256 "$TOR_PATH"
-          
-      - name: Ad-hoc codesign (Mach-O first)
+
+      - name: Ad-hoc codesign Electron app (off-DMG)
         run: |
-          APP="/Volumes/MyVergiesRW/MyVergies.app"
+          APP="MyVergies.app"
 
           echo "🔧 Removing existing signatures..."
           codesign --remove-signature "$APP" || true
 
-          echo "🔧 Signing Mach-O binaries inside frameworks..."
-          find "$APP/Contents/Frameworks" -type f -perm +111 | while read -r bin; do
+          echo "🔧 Signing all Mach-O binaries..."
+          find "$APP" -type f -perm +111 | while read -r bin; do
             if file "$bin" | grep -q "Mach-O"; then
               echo "Signing Mach-O: $bin"
               codesign --force --sign - "$bin"
@@ -100,16 +104,18 @@ jobs:
           echo "🔍 Verifying signature..."
           codesign --verify --verbose=2 "$APP"
 
-
       - name: Unmount DMG
         run: |
           hdiutil detach /Volumes/MyVergiesRW
 
-      - name: Recompress DMG
+      - name: Rebuild DMG with signed app
         run: |
-          hdiutil convert myvergies-writable.dmg \
+          hdiutil create \
+            -volname "MyVergies" \
+            -srcfolder MyVergies.app \
+            -ov \
             -format UDZO \
-            -o myvergies-patched.dmg
+            myvergies-patched.dmg
 
       - name: Upload patched DMG
         uses: actions/upload-artifact@v4
