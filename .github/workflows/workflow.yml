@@ -13,9 +13,12 @@ jobs:
 
       - name: Verify inputs
         run: |
+          echo "Repo contents:"
           ls -lah
-          ls -lah bin/Tor
-          file bin/Tor/tor.real
+          echo
+          echo "Tor binary details:"
+          ls -lah tor.real
+          file tor.real
 
       - name: Convert DMG to writable
         run: |
@@ -28,12 +31,12 @@ jobs:
           hdiutil attach myvergies-writable.dmg \
             -mountpoint /Volumes/MyVergiesRW
 
-      - name: Verify Tor target path exists
+      - name: Verify Tor target path exists inside DMG
         run: |
           TOR_DIR="/Volumes/MyVergiesRW/MyVergies.app/Contents/Resources/app.asar.unpacked/bin/Tor"
           TOR_PATH="$TOR_DIR/tor.real"
 
-          echo "Checking Tor directory:"
+          echo "Listing Tor directory inside DMG:"
           ls -lah "$TOR_DIR"
 
           if [ ! -f "$TOR_PATH" ]; then
@@ -42,7 +45,7 @@ jobs:
             exit 1
           fi
 
-          echo "✅ Found existing Tor binary"
+          echo "✅ Found existing Tor binary inside DMG"
 
       - name: Replace Tor binary
         run: |
@@ -51,8 +54,8 @@ jobs:
           echo "Removing old Tor binary..."
           rm -f "$TOR_PATH"
 
-          echo "Copying new Tor binary..."
-          cp bin/Tor/tor.real "$TOR_PATH"
+          echo "Copying new Tor binary from repo root..."
+          cp tor.real "$TOR_PATH"
 
           chmod 755 "$TOR_PATH"
 
