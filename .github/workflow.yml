@@ -1,0 +1,98 @@
+name: Replace Tor in MyVergies DMG
+
+on:
+  workflow_dispatch:
+
+jobs:
+  patch-dmg:
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Verify inputs
+        run: |
+          ls -lah
+          test -f myvergies.dmg || (echo "❌ myvergies.dmg not found" && exit 1)
+          test -f tor.real || (echo "❌ tor.real not found" && exit 1)
+
+      # -------------------------------
+      # STEP 1: Mount DMG (read-only)
+      # -------------------------------
+      - name: Mount DMG (read-only)
+        run: |
+          hdiutil attach myvergies.dmg -mountpoint /Volumes/MyVergiesRO -readonly
+
+      # ---------------------------------------
+      # STEP 2: List ALL files inside the DMG
+      # ---------------------------------------
+      - name: List files inside DMG
+        run: |
+          echo "===== FILE TREE INSIDE DMG ====="
+          find /Volumes/MyVergiesRO -print
+          echo "================================"
+
+      - name: Unmount read-only DMG
+        run: |
+          hdiutil detach /Volumes/MyVergiesRO
+
+      # ---------------------------------------
+      # STEP 3: Convert DMG to writable format
+      # ---------------------------------------
+      - name: Convert DMG to writable
+        run: |
+          hdiutil convert myvergies.dmg \
+            -format UDRW \
+            -o myvergies-writable.dmg
+
+      # ---------------------------------------
+      # STEP 4: Mount writable DMG
+      # ---------------------------------------
+      - name: Mount writable DMG
+        run: |
+          hdiutil attach myvergies-writable.dmg -mountpoint /Volumes/MyVergiesRW
+
+      # ---------------------------------------
+      # STEP 5: Replace Tor binary
+      # ---------------------------------------
+      - name: Replace Tor binary
+        run: |
+          TOR_PATH="/Volumes/MyVergiesRW/bin/Tor/tor"
+
+          if [ ! -f "$TOR_PATH" ]; then
+            echo "❌ Expected Tor binary not found at:"
+            echo "   $TOR_PATH"
+            echo "Check file listing above and update path."
+            exit 1
+          fi
+
+          echo "✅ Found Tor binary, replacing..."
+          cp tor.real "$TOR_PATH"
+          chmod +x "$TOR_PATH"
+
+      # ---------------------------------------
+      # STEP 6: Unmount writable DMG
+      # ---------------------------------------
+      - name: Unmount writable DMG
+        run: |
+          hdiutil detach /Volumes/MyVergiesRW
+
+      # ---------------------------------------
+      # STEP 7: Rebuild compressed DMG
+      # ---------------------------------------
+      - name: Rebuild final DMG
+        run: |
+          hdiutil convert myvergies-writable.dmg \
+            -format UDZO \
+            -imagekey zlib-level=9 \
+            -o myvergies-fixed.dmg
+
+      # ---------------------------------------
+      # STEP 8: Upload artifact
+      # ---------------------------------------
+      - name: Upload patched DMG
+        uses: actions/upload-artifact@v4
+        with:
+          name: myvergies-fixed-dmg
+          path: myvergies-fixed.dmg
